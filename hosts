@@ -1,0 +1,6 @@
+[wiki]
+5.45.104.211
+
+[wiki:vars]
+ansible_user=root
+ansible_password=nope

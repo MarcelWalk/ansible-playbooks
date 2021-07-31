@@ -1,0 +1,101 @@
+---
+- name: setup wiki.js
+  hosts: wiki
+  tasks:
+
+  - name: ensure curl is installed
+    apt:
+      name: curl
+      state: present
+
+  - name: check if docker key exists
+    stat: 
+      path: /usr/share/keyrings/docker-archive-keyring.gpg
+    register: docker_key
+
+  - name: add docker gpg key
+    shell:
+      cmd: curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    when: docker_key.stat.exists == false
+
+  - name: add docker repo
+    shell:
+      cmd: echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+  - name: ensure docker is installed
+    apt:
+      pkg: 
+        - docker-ce 
+        - docker-ce-cli 
+        - containerd.io
+      state: present
+      update_cache: yes
+
+  - name: ensure python is installed
+    apt:
+      name: python
+      state: present
+
+  - name: ensure pip is installed
+    apt:
+      name: python-pip
+      state: present
+
+  - name: ensure pip is installed
+    apt:
+      name: python-docker
+      state: present
+
+  - name: remove unused dependencies
+    apt:
+      autoremove: yes
+
+  - name: Create wikijs-network network
+    docker_network:
+      name: wikijs-network
+
+  - name: setup postgres docker
+    docker_container:
+      name: postgres-db
+      image: "postgres:latest"
+      state: started
+      volumes:
+      - /db
+      env:
+        POSTGRES_USER: wikijs
+        POSTGRES_PASSWORD: somesecurepassword
+      networks:
+      - name: wikijs-network
+
+  - name: get db container info
+    docker_container_info:
+      name: postgres-db
+    register: db_container_info
+
+  - name: get db ip
+    shell:
+      cmd: docker inspect -f '{%raw %}{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}{% endraw %}' postgres-db
+    register: db_ip
+
+  - name: setup wikijs docker
+    docker_container:
+      name: wiki
+      image: "requarks/wiki:latest"
+      state: started
+      env:
+        DB_TYPE: "postgres"
+        DB_HOST: "{{ db_ip.stdout|quote }}"
+        DB_PORT: "5432"
+        DB_USER: "wikijs"
+        DB_PASS: "somesecurepassword"
+        DB_NAME: "wikijs"
+        SSL_ACTIVE: "true"
+        LETSENCRYPT_DOMAIN: "wiki.nyasaki.cloud"
+        LETSENCRYPT_EMAIL: "walk.marcel.97@googlemail.com"
+      ports:
+      - "80:3000"
+      - "443:3443"
+      networks:
+      - name: wikijs-network
+
+
